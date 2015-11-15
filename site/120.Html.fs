@@ -18,241 +18,343 @@ module Html
 open FSharp.Reflection
 
 open System
+open System.IO
 open System.Net
 open System.Text
 
-type Link       = Link      of string*string
-type Meta       = Meta      of string*string
-type Class      = Class     of string
-type Attribute  = Attribute of string*string
+module Common =
+  type BinaryTree<'T> =
+    | Empty
+    | Leaf1  of 'T
+    | Leaf2  of 'T*'T
+    | Leaf3  of 'T*'T*'T
+    | Leaf4  of 'T*'T*'T*'T
+    | LeafN  of 'T []
+    | Fork  of BinaryTree<'T>*BinaryTree<'T>
 
-type InputKind =
-  | TextBox
-  | RadioButton
-  | SubmitButton
+  let inline isEmpty t =
+    match t with
+    | Empty -> true
+    | _     -> false
 
-type FormMethod =
-  | UseGet
-  | UsePost
+  let inline join (l : BinaryTree<'T>) (r : BinaryTree<'T>) : BinaryTree<'T> =
+    match l, r with
+    | Empty , _     -> r
+    | _     , Empty -> l
+    | _             -> Fork (l,r)
 
-type HeaderSize =
-  | Header1
-  | Header2
-  | Header3
+open Common
 
-[<NoEquality>]
-[<NoComparison>]
-type Element =
-  | Text              of string
-  | Image             of string*string
-  | Header            of HeaderSize*(Element [])
-  | LineBreak
-  | Form              of string*FormMethod*Element []
-  | FieldSet          of string*Element []
-  | InputField        of InputKind*string*string
-  | Paragraph         of Element []
-  | Mark              of Element []
-  | ExternalLink      of string*(Element [])
-  | OrderedList       of (Element []) []
-  | UnorderedList     of (Element []) []
-  | WithClasses       of (Class [])*(Element [])
-  | WithAttributes    of (Attribute [])*(Element [])
-  | Generated         of (int -> Class [] -> Attribute [] -> (int -> string -> unit) -> unit)
+module Model =
+  type HtmlLink           = HtmlLink      of string*string
+  type HtmlMeta           = HtmlMeta      of string*string
+  type HtmlTextInput      =
+    | TextInput
+    | RadioInput
+    | SubmitInput
+  type HtmlFormMethod     =
+    | UseGet
+    | UsePost
+  type HtmlStyleRef       = HtmlStyleRef of string
+  type HtmlStyleRefTree   = BinaryTree<HtmlStyleRef>
+  type HtmlAttribute   =
+    | Alt               of string
+    | Action            of string
+    | Href              of string
+    | Id                of string
+    | InputType         of HtmlTextInput
+    | Class             of HtmlStyleRefTree
+    | Method            of HtmlFormMethod
+    | Name              of string
+    | Src               of string
+    | Value             of string
+    | KeyValue          of string*string
+    | KeyUnencodedValue of string*string
+  type HtmlAttributeTree  = BinaryTree<HtmlAttribute>
 
-[<NoEquality>]
-[<NoComparison>]
-type Page =
+  type HtmlGeneratorContext =
+    {
+      Name : string
+    }
+
+    static member Empty : HtmlGeneratorContext = {Name = ""}
+
+  [<NoEquality>]
+  [<NoComparison>]
+  type HtmlElement =
+    | Text            of string
+    | Tag             of string*HtmlAttributeTree*(HtmlElement [])
+    | ClosedTag       of string*HtmlAttributeTree
+    | WithClass       of HtmlStyleRefTree*(HtmlElement [])
+    | WithAttributes  of HtmlAttributeTree*(HtmlElement [])
+    | Generated       of (HtmlGeneratorContext -> int -> HtmlStyleRefTree -> HtmlAttributeTree -> (int -> string -> unit) -> unit)
+
+  [<NoEquality>]
+  [<NoComparison>]
+  type HtmlPage =
+    {
+      Title           : string
+      Links           : HtmlLink []
+      Metas           : HtmlMeta []
+      Body            : HtmlElement []
+    }
+
+open Model
+
+let inline styleRef s                             = HtmlStyleRef s
+let inline attribute k v                          = KeyValue (k,v)
+let inline unencodedAttribute k v                 = KeyUnencodedValue (k,v)
+let inline tag tag_ attributes elements           = Tag (tag_, attributes, elements)
+let inline closedTag tag_ attributes              = ClosedTag (tag_, attributes)
+let inline text txt                               = Text txt
+let inline image src alt                          = closedTag "img" (Leaf2 (Src src, Alt alt))
+let inline header1 elements                       = tag "h1" Empty elements
+let inline header2 elements                       = tag "h2" Empty elements
+let inline header3 elements                       = tag "h3" Empty elements
+let lineBreak                                     = closedTag "br" Empty
+let inline form action meth elements              = tag "form" (Leaf2 (Action action, Method meth)) elements
+let inline fieldSet elements                      = tag "fieldset" Empty elements
+let inline inputField input name value            = closedTag "input" (Leaf3 (InputType input, Name name, Value value))
+let inline textField name value                   = inputField TextInput name value
+let inline radioField name value                  = inputField RadioInput name value
+let inline submitField name value                 = inputField SubmitInput name value
+let inline textHeader1 text                       = header1 [|Text text|]
+let inline textHeader2 text                       = header2 [|Text text|]
+let inline textHeader3 text                       = header3 [|Text text|]
+let inline paragraph elements                     = Tag ("p", Empty, elements)
+let inline anchor href elements                   = Tag ("a", Leaf1 (Href href), elements)
+let inline textLink href description              = anchor href [|Text description|]
+let inline imageLink href src alt                 = anchor href [|image src alt|]
+let inline generated g                            = Generated g
+let inline withClass cls elements                 = WithClass (LeafN cls, elements)
+let inline withClass_ cls element                 = withClass cls ([|element|])
+let inline withAttributes attributes elements     = WithAttributes (LeafN attributes, elements)
+let inline withAttributes_ attributes element     = WithAttributes (LeafN attributes, [|element|])
+
+let inline link rel href                          = HtmlLink (rel,href)
+let inline stylesheet href                        = HtmlLink ("stylesheet",href)
+let inline meta name content                      = HtmlMeta (name,content)
+let inline viewport content                       = HtmlMeta ("viewport",content)
+let inline page title links metas body : HtmlPage =
   {
-    Title           : string
-    Links           : Link []
-    Metas           : Meta []
-    Body            : Element []
+    Title = title
+    Links = links
+    Metas = metas
+    Body  = body
   }
 
-let inline text txt                           = Text txt
-let inline image src alt                      = Image (src,alt)
-let inline header1 elements                   = Header (Header1, elements)
-let inline header2 elements                   = Header (Header2, elements)
-let inline header3 elements                   = Header (Header3, elements)
-let lineBreak                                 = LineBreak
-let inline form action meth elements          = Form (action, meth, elements)
-let inline fieldSet elements                  = FieldSet ("", elements)
-let inline textField name value               = InputField (TextBox,name, value)
-let inline radioField name value              = InputField (RadioButton,name, value)
-let inline submitField name value             = InputField (SubmitButton,name, value)
-let inline textHeader1 text                   = header1 [|Text text|]
-let inline textHeader2 text                   = header2 [|Text text|]
-let inline textHeader3 text                   = header3 [|Text text|]
-let inline paragraph elements                 = Paragraph elements
-let inline mark elements                      = Mark elements
-let inline textMark text                      = Mark [|Text text|]
-let inline externalLink href elements         = ExternalLink (href, elements)
-let inline textLink href description          = ExternalLink (href, [|Text description|])
-let inline imageLink href src alt             = ExternalLink (href, [|Image (src, alt)|])
-let inline orderedList items                  = OrderedList items
-let inline unorderedList items                = UnorderedList items
-let inline generated g                        = Generated g
-let inline withClasses classes elements       = WithClasses (classes, elements)
-let inline withClasses_ classes element       = WithClasses (classes, [|element|])
-let inline withAttributes attributes elements = WithAttributes (attributes, elements)
-let inline withAttributes_ attributes element = WithAttributes (attributes, [|element|])
+module Generator =
+  let generateHtml (page : HtmlPage) : string =
+    let html  = StringBuilder 64
 
-let inline link rel href                      = Link (rel,href)
-let inline stylesheet href                    = Link ("stylesheet",href)
-let inline meta name content                  = Meta (name,content)
-let inline viewport content                   = Meta ("viewport",content)
-let inline attribute key value                = Attribute (key, value)
-let inline page title links metas body : Page = { Title = title; Links = links; Metas = metas; Body = body; }
+    let inline htmlEncode (s : string) : string = WebUtility.HtmlEncode s
+    let inline urlEncode  (s : string) : string = s
 
-let generateHtml (page : Page) : string =
-  let inline htmlEncode (s : string) : string = WebUtility.HtmlEncode s
-  let inline urlEncode  (s : string) : string = s
-
-  let html  = StringBuilder 64
-
-  let empty = [||]
-
-  let inline emptyStr s         = String.IsNullOrEmpty s
-  let inline nonEmptyStr s      = not (emptyStr s)
-  let inline ch   (c : char)    = ignore <| html.Append c
-  let inline str  (s : string)  = ignore <| html.Append s
-  let inline indent (i : int)   = ignore <| html.Append (' ', i)
-  let inline newl ()            = ignore <| html.AppendLine ()
-
-  let inline append (i : int) (l : string) : unit =
-    indent i
-    ignore <| html.AppendLine l
-
-  let inline headerTypeTag tp =
-    match tp with
-    | Header1       -> "h1"
-    | Header2       -> "h2"
-    | Header3       -> "h3"
-
-  let inline inputKind ik =
-    match ik with
-    | TextBox       -> "text"
-    | RadioButton   -> "radio"
-    | SubmitButton  -> "submit"
-
-  let inline formatMethod fm =
-    match fm with
-    | UseGet        -> "GET"
-    | UsePost       -> "POST"
-
-  let renderTag
-    (closed     : bool              )
-    (i          : int               )
-    (name       : string            )
-    (classes    : Class []          )
-    (custom     : Attribute []      )
-    (attributes : (string*string) [])=
-    indent i
-    ch '<'
-    str name
-    if classes.Length > 0 then
-      str @" class="""
-      let mutable first = true
-      for (Class cls) in classes do
-        if nonEmptyStr cls then
-          if not first then
-            ch ';'
-            first <- false
-          str cls
+    let inline emptyStr s         = String.IsNullOrEmpty s
+    let inline nonEmptyStr s      = not (emptyStr s)
+    let inline ch   (c : char)    = ignore <| html.Append c
+    let inline str  (s : string)  = ignore <| html.Append s
+    let inline indent (i : int)   = ignore <| html.Append (' ', i)
+    let inline newl ()            = ignore <| html.AppendLine ()
+    let inline prekv k            =
+      ch ' '
+      str k
+      str @"="""
+    let inline postkv ()          =
       ch '"'
-    for (Attribute (key,value)) in custom do
-      if nonEmptyStr key && nonEmptyStr value then
-        ch ' '
-        str key
-        str @"="""
-        str value
-        ch '"'
-    for key,value in attributes do
-      if nonEmptyStr key && nonEmptyStr value then
-        ch ' '
-        str key
-        str @"="""
-        str value
-        ch '"'
-    if closed then
-      ch '/'
-    ch '>'
-    newl ()
+    let inline kv k v             =
+      // TODO: Report empty k?
+      if nonEmptyStr v then
+        prekv k
+        str v
+        postkv ()
+    let inline hkv k v            =
+      kv k (htmlEncode v)
+    let inline ukv k v            =
+      kv k (urlEncode v)
 
-  let renderEndTag
-    (i          : int               )
-    (name       : string            )=
-    indent i
-    ch '<'
-    ch '/'
-    str name
-    ch '>'
-    newl ()
+    let inline append (i : int) (l : string) : unit =
+      indent i
+      ignore <| html.AppendLine l
 
-  let inline renderClosedTag  i name classes custom attributes = renderTag true  i name classes custom attributes
-  let inline renderStartTag   i name classes custom attributes = renderTag false i name classes custom attributes
+    let rec renderStyleRefs (tree : HtmlStyleRefTree) =
+      // TODO: ref means a new object
+      let first = ref false
+      let rs (HtmlStyleRef sref) =
+        if nonEmptyStr sref then
+          if !first then
+            ch ' '
+            first := false
+          str sref
+      match tree with
+      | Empty ->
+        ()
+      | Leaf1 sref0 ->
+        rs sref0
+      | Leaf2 (sref0, sref1) ->
+        rs sref0
+        rs sref1
+      | Leaf3 (sref0, sref1, sref2) ->
+        rs sref0
+        rs sref1
+        rs sref2
+      | Leaf4 (sref0, sref1, sref2, sref3) ->
+        rs sref0
+        rs sref1
+        rs sref2
+        rs sref3
+      | LeafN srefs ->
+        for sref in srefs do
+          rs sref
+      | Fork (l,r) ->
+        renderStyleRefs l
+        renderStyleRefs r
 
-  let rec renderElements i classes attributes es =
-    let inline container tag attr es =
-      renderStartTag i tag classes attributes attr
-      renderElements (i + 2) empty empty es
-      renderEndTag i tag
-    let inline listItem tag es =
-      // TODO: How to handle list item attributes
-      renderStartTag (i + 2) tag empty empty empty
-      renderElements (i + 4) empty empty es
-      renderEndTag (i + 2) tag
-    for e in es do
-      match e with
-      | Text text ->
-        append i (htmlEncode text)
-      | Image (src, alt) ->
-        renderClosedTag i "img" classes attributes [|"src", urlEncode src; "alt", htmlEncode alt|]
-      | Header (tp, inner) ->
-        container (headerTypeTag tp) empty inner
-      | LineBreak ->
-        renderClosedTag i "br" classes attributes empty
-      | Form (action, meth, inner) ->
-        container "form" [|"action", action; "method", formatMethod meth|] inner
-      | FieldSet (_, inner) ->
-        container "fieldset" empty inner
-      | InputField (kind, name, value) ->
-        renderClosedTag i "input" classes attributes [|"type", inputKind kind; "name", name; "value", value|]
-      | Paragraph inner ->
-        container "p" empty inner
-      | Mark inner ->
-        container "mark" empty inner
-      | ExternalLink (href, es) ->
-        container "a" [|"href", urlEncode href|] es
-      | OrderedList items ->
-        renderStartTag i "ol" classes attributes empty
-        for item in items do
-          listItem "li" item
-        renderEndTag i "ol"
-      | UnorderedList items ->
-        renderStartTag i "ul" classes attributes empty
-        for item in items do
-          listItem "li" item
-        renderEndTag i "ul"
-      | WithClasses (newClasses, inner) -> renderElements i newClasses attributes inner
-      | WithAttributes (newAttributes, inner) -> renderElements i classes newAttributes inner
-      | Generated generator -> generator i classes attributes append
+    let ckv (c : HtmlStyleRefTree) =
+      if not (isEmpty c) then
+        prekv "class"
+        renderStyleRefs c
+        postkv ()
 
-  append 0 "<html>"
-  append 2 "<head>"
-  for (Link (rel, href)) in page.Links do
-    append 4 (sprintf """<link rel="%s" href="%s"/>""" rel (urlEncode href))
-  for (Meta (name, content)) in page.Metas do
-    append 4 (sprintf """<meta name="%s" content="%s"/>""" name content)
-  append 4 (sprintf "<title>%s</title>" (htmlEncode page.Title))
-  append 2 "</head>"
-  append 2 "<body>"
-  renderElements 2 empty empty page.Body
-  append 2 "</body>"
-  append 0 "</html>"
+    let rec renderAttributes
+      (tree     : HtmlAttributeTree)
+      (srefTree : HtmlStyleRefTree ) : bool =
+      // TODO: inline?
+      let ra attr =
+        match attr with
+        | InputType   v   ->
+          let i =
+            match v with
+            | TextInput   -> "text"
+            | RadioInput  -> "radio"
+            | SubmitInput -> "submit"
+          kv "type" i
+          false
+        | Method v        ->
+          let i =
+            match v with
+            | UseGet      -> "GET"
+            | UsePost     -> "POST"
+          kv "method" i
+          false
+        | Action  v       -> ukv "action" v; false
+        | Href    v       -> ukv "href"   v; false
+        | Src     v       -> ukv "src"    v; false
+        | Value   v       -> hkv "value"  v; false
+        | Alt     v       -> hkv "alt"    v; false
+        | Name    v       -> kv "name"    v; false
+        | Id      v       -> kv "id"      v; false
+        | Class c ->
+          ckv (join c srefTree)
+          true
+        | KeyValue (k,v) when nonEmptyStr k ->
+          hkv k v
+          false
+        | KeyValue (_, _) ->
+          false  // TODO: Raise?
+        | KeyUnencodedValue (k,v) when nonEmptyStr k ->
+          kv k v
+          false
+        | KeyUnencodedValue (_, _) ->
+          false  // TODO: Raise?
 
-  let result = html.ToString ()
-//  printfn "%s" result
-  result
+      match tree with
+      | Empty ->
+        false
+      | Leaf1 attr0 ->
+        let f0 = ra attr0
+        f0
+      | Leaf2 (attr0, attr1) ->
+        let f0 = ra attr0
+        let f1 = ra attr1
+        f0 || f1
+      | Leaf3 (attr0, attr1, attr2) ->
+        let f0 = ra attr0
+        let f1 = ra attr1
+        let f2 = ra attr2
+        f0 || f1 || f2
+      | Leaf4 (attr0, attr1, attr2, attr3) ->
+        let f0 = ra attr0
+        let f1 = ra attr1
+        let f2 = ra attr2
+        let f3 = ra attr3
+        f0 || f1 || f2 || f3
+      | LeafN attrs ->
+        let mutable hasClass = false
+        for attr in attrs do
+          hasClass <- ra attr || hasClass
+        hasClass
+      | Fork (l,r) ->
+        let f0 = renderAttributes l srefTree
+        let f1 = renderAttributes r srefTree
+        f0 || f1
 
+    let renderTag
+      (closed     : bool              )
+      (i          : int               )
+      (tag        : string            )
+      (attributes : HtmlAttributeTree )
+      (srefTree   : HtmlStyleRefTree  ) =
+      indent i
+      ch '<'
+      str tag
+      let hasClass = renderAttributes attributes srefTree
+      if not hasClass && not (isEmpty srefTree) then
+        ckv srefTree
+      if closed then
+        ch '/'
+      ch '>'
+      newl ()
 
+    let renderEndTag
+      (i          : int               )
+      (name       : string            ) =
+      indent i
+      str "</"
+      str name
+      ch '>'
+      newl ()
+    let inline renderClosedTag i tag attributes srefTree = renderTag true  i tag attributes srefTree
+    let inline renderStartTag  i tag attributes srefTree = renderTag false i tag attributes srefTree
+
+    let ctx = HtmlGeneratorContext.Empty
+
+    let rec renderElements i cls attrs es =
+      for e in es do
+        match e with
+        | Text text ->
+          append i (htmlEncode text)
+        | Tag (tag, attributes, ies) ->
+          let ea = join attributes attrs
+          if ies.Length > 0 then
+            renderStartTag i tag ea cls
+            renderElements (i + 2) Empty Empty ies
+            renderEndTag i tag
+          else
+            renderClosedTag i tag ea cls
+        | ClosedTag (tag, attributes) ->
+          let ea = join attributes attrs
+          renderClosedTag i tag ea cls
+        | WithClass (newClass, inner) ->
+          renderElements i newClass attrs inner
+        | WithAttributes (newAttributes, inner) ->
+          renderElements i cls newAttributes inner
+        | Generated generator ->
+          generator ctx i cls attrs append
+
+    append 0 "<html>"
+    append 2 "<head>"
+    for (HtmlLink (rel, href)) in page.Links do
+      append 4 (sprintf """<link rel="%s" href="%s"/>""" rel (urlEncode href))
+    for (HtmlMeta (name, content)) in page.Metas do
+      append 4 (sprintf """<meta name="%s" content="%s"/>""" name content)
+    append 4 (sprintf "<title>%s</title>" (htmlEncode page.Title))
+    append 2 "</head>"
+    append 2 "<body>"
+    renderElements 2 Empty Empty page.Body
+    append 2 "</body>"
+    append 0 "</html>"
+
+    let result = html.ToString ()
+  //  printfn "%s" result
+    result

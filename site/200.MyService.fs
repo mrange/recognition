@@ -49,7 +49,7 @@ module Pages =
 
         form
           "/PostRecognition"
-          UsePost
+          Model.UsePost
           [|
             input
               "MY_USERID"
@@ -65,7 +65,7 @@ module Pages =
               "Describe why you think the person deserves recognition from his/her peers"
             submitField "SUBMIT_IT" "Send recognition"
           |]
-          |> withClasses_     [|Class "pure-form"|]
+          |> withClass_ [|styleRef "pure-form"|]
       |]
 
   let PageRecognitionReceived =
@@ -77,8 +77,8 @@ module Pages =
         text "Thank you for taking time to raise awareness of awesome employees"
       |]
 
-  let HtmlRecognition         = generateHtml PageRecognition
-  let HtmlRecognitionReceived = generateHtml PageRecognitionReceived
+  let HtmlRecognition         = Generator.generateHtml PageRecognition
+  let HtmlRecognitionReceived = Generator.generateHtml PageRecognitionReceived
 
 module WebParts =
   open MiniJson.JsonModule
