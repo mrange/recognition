@@ -105,7 +105,7 @@ module WebParts =
 
   let PostRecognition =
     Request
-      >>= fun req -> RedirectWith (FOUND "/RecognitionReceived")
+      >>= fun _ -> RedirectWith (FOUND "/RecognitionReceived")
     |> ToWebPart
 
 open Suave.Http
