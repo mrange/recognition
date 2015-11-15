@@ -15,60 +15,6 @@
 // ----------------------------------------------------------------------------------------------
 module MyService
 
-module Compute =
-  open System
-  open System.Text
-
-  let Fibonacci n =
-    // Important: impl is tail-recursive
-    //  This allows F# to unwind impl into an effective for loop
-    let rec impl i f s=
-      if i < n then
-        let t = f + s
-        impl (i + 1L) s t
-      else
-        s
-    impl 0L 1L 1L
-
-  let Sort3 a b c =
-    let inline f a b c = if b <= c then a,b,c else a,c,b
-
-    if a <= b && a <= c then f a b c
-    elif b <= a && b <= c then f b a c
-    else f c a b
-
-  let (|Scalene|Isosceles|Equilateral|Error|) (a,b,c) =
-    let a,b,c = Sort3 a b c
-    if c < a + b then
-      match a = b, b = c with
-      | true  , true  -> Equilateral  // a = b && b = c => a = c
-      | false , false -> Scalene      // a,b,c sorted, a <> b && b <> c => a <> c
-      | _     , _     -> Isosceles    // All other cases => Isosceles
-    else
-      // c is greater or equal to sum of a b ==> no triangle
-      Error
-
-  let ReverseWords (input : string) =
-    let sb = StringBuilder input.Length
-
-    // Important: impl is tail-recursive
-    //  This allows F# to unwind impl into an effective for loop
-    let rec impl b i =
-      let inline reverse () = for ii = (i - 1) downto b do ignore <| sb.Append input.[ii]
-      if i < input.Length then
-        if not (Char.IsWhiteSpace input.[i]) then
-          impl b (i + 1)
-        else
-          reverse ()
-          ignore <| sb.Append input.[i]
-          impl (i + 1) (i + 1)
-      else
-        reverse ()
-
-    impl 0 0
-
-    sb.ToString ()
-
 module Parsers =
   open MiniJson.DynamicJsonModule
 
@@ -79,117 +25,100 @@ module Parsers =
 module Pages =
   open Html
 
-  let PageServiceList =
-    page "Service list"
-      [
-        textHeader1 "Service list"
+  let inline input n t p =
+    paragraph
+      [|
+        text t
+        lineBreak
+        textField n ""
+        |> withAttributes_  [|attribute "placeholder" p|]
+      |]
 
-        text "List of available services:"
+  let page nm body =
+    page
+      nm
+      [|stylesheet  "http://yui.yahooapis.com/pure/0.6.0/pure-min.css"|]
+      [|viewport    "width=device-width, initial-scale=1"             |]
+      body
 
-        unorderedList
-          [
-            [textLink "/WhatIsYourToken"            "WhatIsYourToken" ]
-            [textLink "/FibonacciNumber/3"          "FibonacciNumber" ]
-            [textLink "/WhatShapeIsThis/3/3/10"     "WhatShapeIsThis" ]
-            [textLink "/ReverseWords/Hello there!"  "ReverseWords"    ]
-          ]
-      ]
+  let PageRecognition =
+    page
+      "Recognition"
+      [|
+        textHeader1 "Recognition"
 
-  let HtmlServiceList = generateHtml PageServiceList
+        form
+          "/PostRecognition"
+          UsePost
+          [|
+            input
+              "MY_USERID"
+              "Hello, my name is:"
+              "Your user name"
+            input
+              "AWESOME_USERID"
+              "I like to recognize the awesome work done by:"
+              "The user name of the person you want grant recognition"
+            input
+              "MOTIVATION"
+              "Here are the reasons I think this person is awesome:"
+              "Describe why you think the person deserves recognition from his/her peers"
+            submitField "SUBMIT_IT" "Send recognition"
+          |]
+          |> withClasses_     [|Class "pure-form"|]
+      |]
 
+  let PageRecognitionReceived =
+    page
+      "Recognition Received"
+      [|
+        textHeader1 "Recognition Received!"
+
+        text "Thank you for taking time to raise awareness of awesome employees"
+      |]
+
+  let HtmlRecognition         = generateHtml PageRecognition
+  let HtmlRecognitionReceived = generateHtml PageRecognitionReceived
 
 module WebParts =
-  open Compute
   open MiniJson.JsonModule
   open Parsers
   open Suave.Http.RequestErrors
+  open Suave.Http.Redirection
   open System
   open System.Web
   open WebPartT
 
   let DoIndent = true
 
-  let TokenJson =
-    JsonObject
-      [|
-        "token"   , JsonString "fc893331-82b8-41d4-b5cb-4582ad813cc9"
-      |]
-
   let JsonResponse json =
     RespondWithJson DoIndent json
     |> ToWebPart
 
-  let GetServiceList =
-    RespondWithText "text/html" Pages.HtmlServiceList
+  let GetRecognition =
+    RespondWithText "text/html" Pages.HtmlRecognition
     |> ToWebPart
 
-  let GetToken =
-    TokenJson
-    |> JsonResponse
+  let GetRecognitionReceived =
+    RespondWithText "text/html" Pages.HtmlRecognitionReceived
+    |> ToWebPart
 
-  let GetFibonacciNumber n =
-    let f = Fibonacci n
-    JsonObject
-      [|
-        "input"     , JsonString (string n)
-        "fibonacci" , JsonString (string f)
-      |]
-    |> JsonResponse
-
-  let GetShape (a,b,c) =
-    let s =
-      match a,b,c with
-      | Scalene     -> "Scalene"
-      | Isosceles   -> "Isosceles"
-      | Equilateral -> "Equilateral"
-      | Error       -> "Error"
-    JsonObject
-      [|
-        "a"         , JsonString (string a)
-        "b"         , JsonString (string b)
-        "c"         , JsonString (string c)
-        "shape"     , JsonString s
-      |]
-    |> JsonResponse
-
-  let GetReversedWords i =
-    let i = i |> HttpUtility.UrlDecode
-    let r = i |> ReverseWords
-    JsonObject
-      [|
-        "input"     , JsonString i
-        "reversed"  , JsonString r
-      |]
-    |> JsonResponse
-
-  let PostReversedWords =
-    wpt {
-      let! _,q = ReceiveJson true
-      match q?input with
-      | ParseString i ->
-        let r = i |> ReverseWords
-        let json =
-          JsonObject
-            [|
-              "input"     , JsonString i
-              "reversed"  , JsonString r
-            |]
-        return! RespondWithJson DoIndent json
-      | _ -> return! FailWith (BAD_REQUEST "Invalid input")
-    } |> ToWebPart
+  let PostRecognition =
+    Request
+      >>= fun req -> RedirectWith (FOUND "/RecognitionReceived")
+    |> ToWebPart
 
 open Suave.Http
 open Suave.Http.Applicatives
+open Suave.Http.Redirection
 open Suave.Http.RequestErrors
 open Suave.Types
 
 let App : WebPart =
   choose
     [
-      GET >>= path      "/WhatIsYourToken"          >>= WebParts.GetToken
-      GET >>= pathScan  "/FibonacciNumber/%u"           WebParts.GetFibonacciNumber
-      GET >>= pathScan  "/WhatShapeIsThis/%u/%u/%u"     WebParts.GetShape
-      GET >>= pathScan  "/ReverseWords/%s"              WebParts.GetReversedWords
-      POST>>= path      "/ReverseWords"             >>= WebParts.PostReversedWords
-      WebParts.GetServiceList // Fallback
+      GET >>= path      "/Recognition"              >>= WebParts.GetRecognition
+      GET >>= path      "/RecognitionReceived"      >>= WebParts.GetRecognitionReceived
+      POST>>= path      "/PostRecognition"          >>= WebParts.PostRecognition
+      MOVED_PERMANENTLY "/Recognition"
     ]

@@ -118,6 +118,15 @@ let RespondWithText (mimeType : string) (s : string) : WebPartT<unit> =
         | Some mtctx  -> return SuccessfullyHandled ((), mtctx)
     }
 
+let RedirectWith (redirection : Suave.Types.WebPart) : WebPartT<_> =
+  fun ctx ->
+    async {
+      let! oredirection = redirection ctx
+      match oredirection with
+      | None      -> return NotHandled
+      | Some rctx -> return SuccessfullyHandled ((), rctx)
+    }
+
 let FailWith (failure : Suave.Types.WebPart) : WebPartT<_> =
   fun ctx ->
     async {
