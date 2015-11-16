@@ -95,11 +95,11 @@ module Model =
 
   type HtmlGeneratorContext =
     {
-      DefaultTagClass : Map<HtmlTag, HtmlStyleRefTree>
+      UserData : Map<string, obj>
     }
-    static member create dtc : HtmlGeneratorContext =
+    static member create ud : HtmlGeneratorContext =
       {
-        DefaultTagClass = dtc
+        UserData = ud
       }
     static member empty = HtmlGeneratorContext.create Map.empty
 
@@ -112,6 +112,7 @@ module Model =
     | ClosedTag       of HtmlTag*HtmlAttributeTree
     | WithClass       of HtmlStyleRefTree*(HtmlElement [])
     | WithAttributes  of HtmlAttributeTree*(HtmlElement [])
+    | MapContext      of (HtmlGeneratorContext -> HtmlGeneratorContext)*(HtmlElement [])
     | Generated       of (HtmlGeneratorContext -> int -> HtmlStyleRefTree -> HtmlAttributeTree -> (int -> string -> unit) -> unit)
 
   [<NoEquality>]
@@ -121,6 +122,7 @@ module Model =
       Title           : string
       Links           : HtmlLink []
       Metas           : HtmlMeta []
+      Context         : HtmlGeneratorContext
       Body            : HtmlElement []
     }
 
@@ -136,12 +138,12 @@ let inline unencodedText_ txt                     = [|unencodedText txt|]
 let inline text txt                               = Text txt
 let inline text_ txt                              = [|text txt|]
 let inline image src alt                          = closedTag Img (leaf2 (Src src) (Alt alt))
-let inline header1 elements                       = tag Header1 Empty elements
-let inline header2 elements                       = tag Header2 Empty elements
-let inline header3 elements                       = tag Header3 Empty elements
-let lineBreak                                     = closedTag Break Empty
+let inline header1 elements                       = tag Header1 empty elements
+let inline header2 elements                       = tag Header2 empty elements
+let inline header3 elements                       = tag Header3 empty elements
+let lineBreak                                     = closedTag Break empty
 let inline form action meth elements              = tag Form (leaf2 (Action action) (Method meth)) elements
-let inline fieldSet elements                      = tag FieldSet Empty elements
+let inline fieldSet elements                      = tag FieldSet empty elements
 let inline label forInput elements                = tag Label (leaf1 (ForInput forInput)) elements
 let inline textLabel forInput text                = label forInput (text_ text)
 let inline inputField input name value            = closedTag InputField (leaf3 (InputType input) (Name name) (Value value))
@@ -151,30 +153,33 @@ let inline submitField name value                 = inputField SubmitInput name 
 let inline textHeader1 text                       = header1 (text_ text)
 let inline textHeader2 text                       = header2 (text_ text)
 let inline textHeader3 text                       = header3 (text_ text)
-let inline paragraph elements                     = tag Paragraph Empty elements
+let inline paragraph elements                     = tag Paragraph empty elements
 let inline anchor href elements                   = tag Anchor (leaf1 (Href href)) elements
 let inline textLink href description              = anchor href (text_ description)
 let inline imageLink href src alt                 = anchor href [|image src alt|]
-let inline generated g                            = Generated g
 let inline withClass cls elements                 = WithClass (leafN cls, elements)
 let inline withClass_ cls element                 = withClass cls ([|element|])
 let inline withAttributes attributes elements     = WithAttributes (leafN attributes, elements)
 let inline withAttributes_ attributes element     = WithAttributes (leafN attributes, [|element|])
+let inline mapContext m elements                  = MapContext (m, elements)
+let inline mapContext_ m element                  = MapContext (m, [|element|])
+let inline generated g                            = Generated g
 
 let inline link rel href                          = HtmlLink (rel,href)
 let inline stylesheet href                        = HtmlLink ("stylesheet",href)
 let inline meta name content                      = HtmlMeta (name,content)
 let inline viewport content                       = HtmlMeta ("viewport",content)
-let inline page title links metas body : HtmlPage =
+let inline page title links metas context body : HtmlPage =
   {
-    Title = title
-    Links = links
-    Metas = metas
-    Body  = body
+    Title   = title
+    Links   = links
+    Metas   = metas
+    Context = context
+    Body    = body
   }
 
 module Generator =
-  let generateHtml (ctx : HtmlGeneratorContext) (page : HtmlPage) : string =
+  let generateHtml (page : HtmlPage) : string =
     let html  = StringBuilder 64
 
     let inline htmlEncode (s : string) : string = WebUtility.HtmlEncode s
@@ -248,8 +253,8 @@ module Generator =
         postkv ()
 
     let rec renderAttributes
-      (tree     : HtmlAttributeTree     )
-      (srefTree : HtmlStyleRefTree      ) : bool =
+      (tree           : HtmlAttributeTree     )
+      (classOverride  : HtmlStyleRefTree      ) : bool =
       // TODO: inline?
       let ra attr =
         match attr with
@@ -277,7 +282,7 @@ module Generator =
         | ForInput  v     -> kv "for"     v; false
         | Id        v     -> kv "id"      v; false
         | Class c ->
-          ckv (join c srefTree)
+          ckv (join c classOverride)
           true
         | Attribute (k,v) when nonEmptyStr k ->
           hkv k v
@@ -317,40 +322,12 @@ module Generator =
           hasClass <- ra attr || hasClass
         hasClass
       | Fork (l,r) ->
-        let f0 = renderAttributes l srefTree
-        let f1 = renderAttributes r srefTree
+        let f0 = renderAttributes l classOverride
+        let f1 = renderAttributes r classOverride
         f0 || f1
 
-    let renderTag
-      (closed     : bool              )
-      (i          : int               )
-      (tag        : string            )
-      (attributes : HtmlAttributeTree )
-      (srefTree   : HtmlStyleRefTree  ) =
-      indent i
-      ch '<'
-      str tag
-      let hasClass = renderAttributes attributes srefTree
-      if not hasClass && not (isEmpty srefTree) then
-        ckv srefTree
-      if closed then
-        ch '/'
-      ch '>'
-      newl ()
-
-    let renderEndTag
-      (i          : int               )
-      (name       : string            ) =
-      indent i
-      str "</"
-      str name
-      ch '>'
-      newl ()
-    let inline renderClosedTag i tag attributes srefTree = renderTag true  i tag attributes srefTree
-    let inline renderStartTag  i tag attributes srefTree = renderTag false i tag attributes srefTree
-
-    let inline tagAsString t =
-      match t with
+    let inline tagAsString tag =
+      match tag with
       | Anchor          -> "a"
       | Break           -> "br"
       | Form            -> "form"
@@ -364,7 +341,37 @@ module Generator =
       | Paragraph       -> "p"
       | CustomTag   v   -> v
 
-    let rec renderElements i cls attrs es =
+    let renderTag
+      (closed         : bool                )
+      (ctx            : HtmlGeneratorContext)
+      (i              : int                 )
+      (tag            : HtmlTag             )
+      (attributes     : HtmlAttributeTree   )
+      (classOverride  : HtmlStyleRefTree    ) =
+      indent i
+      ch '<'
+      str (tagAsString tag)
+      let hasClass          = renderAttributes attributes classOverride
+      if not hasClass && not (isEmpty classOverride) then
+        ckv classOverride
+      if closed then
+        ch '/'
+      ch '>'
+      newl ()
+
+    let renderEndTag
+      (i              : int                 )
+      (tag            : HtmlTag             ) =
+      indent i
+      str "</"
+      str (tagAsString tag)
+      ch '>'
+      newl ()
+
+    let inline renderClosedTag ctx i tag attributes classOverride = renderTag true  ctx i tag attributes classOverride
+    let inline renderStartTag  ctx i tag attributes classOverride = renderTag false ctx i tag attributes classOverride
+
+    let rec renderElements ctx i cls attrs es =
       for e in es do
         match e with
         | UnencodedText text ->
@@ -372,22 +379,23 @@ module Generator =
         | Text text ->
           append i (htmlEncode text)
         | Tag (tag, attributes, ies) ->
-          let ts = tagAsString tag
           let ea = join attributes attrs
           if ies.Length > 0 then
-            renderStartTag i ts ea cls
-            renderElements (i + 2) Empty Empty ies
-            renderEndTag i ts
+            renderStartTag ctx i tag ea cls
+            renderElements ctx (i + 2) empty empty ies
+            renderEndTag i tag
           else
-            renderClosedTag i ts ea cls
+            renderClosedTag ctx i tag ea cls
         | ClosedTag (tag, attributes) ->
-          let ts = tagAsString tag
           let ea = join attributes attrs
-          renderClosedTag i ts ea cls
-        | WithClass (newClass, inner) ->
-          renderElements i newClass attrs inner
-        | WithAttributes (newAttributes, inner) ->
-          renderElements i cls newAttributes inner
+          renderClosedTag ctx i tag ea cls
+        | WithClass (newClass, ies) ->
+          renderElements ctx i newClass attrs ies
+        | WithAttributes (newAttributes, ies) ->
+          renderElements ctx i cls newAttributes ies
+        | MapContext (m, ies) ->
+          let newCtx = m ctx
+          renderElements newCtx i cls attrs ies
         | Generated generator ->
           generator ctx i cls attrs append
 
@@ -400,7 +408,7 @@ module Generator =
     append 4 (sprintf "<title>%s</title>" (htmlEncode page.Title))
     append 2 "</head>"
     append 2 "<body>"
-    renderElements 2 Empty Empty page.Body
+    renderElements page.Context 2 empty empty page.Body
     append 2 "</body>"
     append 0 "</html>"
 

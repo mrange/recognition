@@ -25,6 +25,11 @@ module Parsers =
 module Pages =
   open Html
 
+  module Pure =
+    let inline form           e = withClass_ [|styleRef "pure-form"; styleRef "pure-form-stacked"|] e
+    let inline button         e = withClass_ [|styleRef "pure-button"|] e
+    let inline primaryButton  e = withClass_ [|styleRef "pure-button"; styleRef "pure-button-primary"|] e
+
   let inline input n t p =
     paragraph
       [|
@@ -38,6 +43,7 @@ module Pages =
       nm
       [|stylesheet  "http://yui.yahooapis.com/pure/0.6.0/pure-min.css"|]
       [|viewport    "width=device-width, initial-scale=1"             |]
+      Model.HtmlGeneratorContext.empty
       body
 
   let PageRecognition =
@@ -62,9 +68,9 @@ module Pages =
               "MOTIVATION"
               "Here are the reasons I think this person is awesome:"
               "Describe why you think the person deserves recognition from his/her peers"
-            submitField "SUBMIT_IT" "Send recognition" |> withClass_ [|styleRef "pure-button-primary"|]
+            submitField "SUBMIT_IT" "Send recognition" |> Pure.primaryButton
           |]
-          |> withClass_ [|styleRef "pure-form"; styleRef "pure-form-stacked"|]
+          |> Pure.form
       |]
 
   let PageRecognitionReceived =
@@ -76,9 +82,7 @@ module Pages =
         text "Thank you for taking time to raise awareness of awesome employees"
       |]
 
-  let generate page           = Generator.generateHtml
-                                  Model.HtmlGeneratorContext.empty
-                                  page
+  let generate page           = Generator.generateHtml page
 
   let HtmlRecognition         = generate PageRecognition
   let HtmlRecognitionReceived = generate PageRecognitionReceived
