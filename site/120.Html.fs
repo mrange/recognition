@@ -93,6 +93,8 @@ module Model =
     | UnencodedAttribute  of string*string
   type HtmlAttributeTree  = BinaryTree<HtmlAttribute>
 
+  [<NoEquality>]
+  [<NoComparison>]
   type HtmlGeneratorContext =
     {
       UserData : Map<string, obj>
