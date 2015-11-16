@@ -27,7 +27,7 @@
 
 #load "100.WebPartT.fs"
 #load "120.Html.fs"
-#load "200.MyService.fs"
+#load "200.RecognitionSite.fs"
 
 open Suave
 open Suave.Http.Successful
@@ -44,7 +44,7 @@ let start (argv : string []) =
   let serverConfig =
       { defaultConfig with bindings = [ HttpBinding.mk HTTP IPAddress.Loopback port ] }
 
-  startWebServer serverConfig MyService.App
+  startWebServer serverConfig RecognitionSite.App
 
   0
 

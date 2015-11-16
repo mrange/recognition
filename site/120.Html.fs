@@ -23,19 +23,26 @@ open System.Net
 open System.Text
 
 module Common =
-  type BinaryTree<'T> =
+  type BinaryTree<'T> =                         // ' Sublime work-around
     | Empty
-    | Leaf1  of 'T
+    | Leaf1  of 'T                              // ' Sublime work-around
     | Leaf2  of 'T*'T
-    | Leaf3  of 'T*'T*'T
+    | Leaf3  of 'T*'T*'T                        // ' Sublime work-around
     | Leaf4  of 'T*'T*'T*'T
-    | LeafN  of 'T []
+    | LeafN  of 'T []                           // ' Sublime work-around
     | Fork  of BinaryTree<'T>*BinaryTree<'T>
 
   let inline isEmpty t =
     match t with
     | Empty -> true
     | _     -> false
+
+  let empty = Empty
+  let inline leaf1 v0           = Leaf1 v0
+  let inline leaf2 v0 v1        = Leaf2 (v0, v1)
+  let inline leaf3 v0 v1 v2     = Leaf3 (v0, v1, v2)
+  let inline leaf4 v0 v1 v2 v3  = Leaf4 (v0, v1, v2, v3)
+  let inline leafN vs           = LeafN vs
 
   let inline join (l : BinaryTree<'T>) (r : BinaryTree<'T>) : BinaryTree<'T> =
     match l, r with
@@ -57,34 +64,52 @@ module Model =
     | UsePost
   type HtmlStyleRef       = HtmlStyleRef of string
   type HtmlStyleRefTree   = BinaryTree<HtmlStyleRef>
-  type HtmlAttribute   =
-    | Alt               of string
-    | Action            of string
-    | Href              of string
-    | Id                of string
-    | InputType         of HtmlTextInput
-    | Class             of HtmlStyleRefTree
-    | Method            of HtmlFormMethod
-    | Name              of string
-    | Src               of string
-    | Value             of string
-    | KeyValue          of string*string
-    | KeyUnencodedValue of string*string
+  type HtmlTag            =
+    | Anchor
+    | Break
+    | Form
+    | FieldSet
+    | InputField
+    | Header1
+    | Header2
+    | Header3
+    | Img
+    | Label
+    | Paragraph
+    | CustomTag           of string
+  type HtmlAttribute      =
+    | Alt                 of string
+    | Action              of string
+    | Class               of HtmlStyleRefTree
+    | ForInput            of string
+    | Href                of string
+    | Id                  of string
+    | InputType           of HtmlTextInput
+    | Method              of HtmlFormMethod
+    | Name                of string
+    | Src                 of string
+    | Value               of string
+    | Attribute           of string*string
+    | UnencodedAttribute  of string*string
   type HtmlAttributeTree  = BinaryTree<HtmlAttribute>
 
   type HtmlGeneratorContext =
     {
-      Name : string
+      DefaultTagClass : Map<HtmlTag, HtmlStyleRefTree>
     }
-
-    static member Empty : HtmlGeneratorContext = {Name = ""}
+    static member create dtc : HtmlGeneratorContext =
+      {
+        DefaultTagClass = dtc
+      }
+    static member empty = HtmlGeneratorContext.create Map.empty
 
   [<NoEquality>]
   [<NoComparison>]
   type HtmlElement =
+    | UnencodedText   of string
     | Text            of string
-    | Tag             of string*HtmlAttributeTree*(HtmlElement [])
-    | ClosedTag       of string*HtmlAttributeTree
+    | Tag             of HtmlTag*HtmlAttributeTree*(HtmlElement [])
+    | ClosedTag       of HtmlTag*HtmlAttributeTree
     | WithClass       of HtmlStyleRefTree*(HtmlElement [])
     | WithAttributes  of HtmlAttributeTree*(HtmlElement [])
     | Generated       of (HtmlGeneratorContext -> int -> HtmlStyleRefTree -> HtmlAttributeTree -> (int -> string -> unit) -> unit)
@@ -102,34 +127,39 @@ module Model =
 open Model
 
 let inline styleRef s                             = HtmlStyleRef s
-let inline attribute k v                          = KeyValue (k,v)
-let inline unencodedAttribute k v                 = KeyUnencodedValue (k,v)
+let inline attribute k v                          = Attribute (k,v)
+let inline unencodedAttribute k v                 = UnencodedAttribute (k,v)
 let inline tag tag_ attributes elements           = Tag (tag_, attributes, elements)
 let inline closedTag tag_ attributes              = ClosedTag (tag_, attributes)
+let inline unencodedText txt                      = UnencodedText txt
+let inline unencodedText_ txt                     = [|unencodedText txt|]
 let inline text txt                               = Text txt
-let inline image src alt                          = closedTag "img" (Leaf2 (Src src, Alt alt))
-let inline header1 elements                       = tag "h1" Empty elements
-let inline header2 elements                       = tag "h2" Empty elements
-let inline header3 elements                       = tag "h3" Empty elements
-let lineBreak                                     = closedTag "br" Empty
-let inline form action meth elements              = tag "form" (Leaf2 (Action action, Method meth)) elements
-let inline fieldSet elements                      = tag "fieldset" Empty elements
-let inline inputField input name value            = closedTag "input" (Leaf3 (InputType input, Name name, Value value))
+let inline text_ txt                              = [|text txt|]
+let inline image src alt                          = closedTag Img (leaf2 (Src src) (Alt alt))
+let inline header1 elements                       = tag Header1 Empty elements
+let inline header2 elements                       = tag Header2 Empty elements
+let inline header3 elements                       = tag Header3 Empty elements
+let lineBreak                                     = closedTag Break Empty
+let inline form action meth elements              = tag Form (leaf2 (Action action) (Method meth)) elements
+let inline fieldSet elements                      = tag FieldSet Empty elements
+let inline label forInput elements                = tag Label (leaf1 (ForInput forInput)) elements
+let inline textLabel forInput text                = label forInput (text_ text)
+let inline inputField input name value            = closedTag InputField (leaf3 (InputType input) (Name name) (Value value))
 let inline textField name value                   = inputField TextInput name value
 let inline radioField name value                  = inputField RadioInput name value
 let inline submitField name value                 = inputField SubmitInput name value
-let inline textHeader1 text                       = header1 [|Text text|]
-let inline textHeader2 text                       = header2 [|Text text|]
-let inline textHeader3 text                       = header3 [|Text text|]
-let inline paragraph elements                     = Tag ("p", Empty, elements)
-let inline anchor href elements                   = Tag ("a", Leaf1 (Href href), elements)
-let inline textLink href description              = anchor href [|Text description|]
+let inline textHeader1 text                       = header1 (text_ text)
+let inline textHeader2 text                       = header2 (text_ text)
+let inline textHeader3 text                       = header3 (text_ text)
+let inline paragraph elements                     = tag Paragraph Empty elements
+let inline anchor href elements                   = tag Anchor (leaf1 (Href href)) elements
+let inline textLink href description              = anchor href (text_ description)
 let inline imageLink href src alt                 = anchor href [|image src alt|]
 let inline generated g                            = Generated g
-let inline withClass cls elements                 = WithClass (LeafN cls, elements)
+let inline withClass cls elements                 = WithClass (leafN cls, elements)
 let inline withClass_ cls element                 = withClass cls ([|element|])
-let inline withAttributes attributes elements     = WithAttributes (LeafN attributes, elements)
-let inline withAttributes_ attributes element     = WithAttributes (LeafN attributes, [|element|])
+let inline withAttributes attributes elements     = WithAttributes (leafN attributes, elements)
+let inline withAttributes_ attributes element     = WithAttributes (leafN attributes, [|element|])
 
 let inline link rel href                          = HtmlLink (rel,href)
 let inline stylesheet href                        = HtmlLink ("stylesheet",href)
@@ -144,7 +174,7 @@ let inline page title links metas body : HtmlPage =
   }
 
 module Generator =
-  let generateHtml (page : HtmlPage) : string =
+  let generateHtml (ctx : HtmlGeneratorContext) (page : HtmlPage) : string =
     let html  = StringBuilder 64
 
     let inline htmlEncode (s : string) : string = WebUtility.HtmlEncode s
@@ -179,12 +209,13 @@ module Generator =
 
     let rec renderStyleRefs (tree : HtmlStyleRefTree) =
       // TODO: ref means a new object
-      let first = ref false
+      let first = ref true
       let rs (HtmlStyleRef sref) =
         if nonEmptyStr sref then
           if !first then
-            ch ' '
             first := false
+          else
+            ch ' '
           str sref
       match tree with
       | Empty ->
@@ -217,8 +248,8 @@ module Generator =
         postkv ()
 
     let rec renderAttributes
-      (tree     : HtmlAttributeTree)
-      (srefTree : HtmlStyleRefTree ) : bool =
+      (tree     : HtmlAttributeTree     )
+      (srefTree : HtmlStyleRefTree      ) : bool =
       // TODO: inline?
       let ra attr =
         match attr with
@@ -237,25 +268,26 @@ module Generator =
             | UsePost     -> "POST"
           kv "method" i
           false
-        | Action  v       -> ukv "action" v; false
-        | Href    v       -> ukv "href"   v; false
-        | Src     v       -> ukv "src"    v; false
-        | Value   v       -> hkv "value"  v; false
-        | Alt     v       -> hkv "alt"    v; false
-        | Name    v       -> kv "name"    v; false
-        | Id      v       -> kv "id"      v; false
+        | Action    v     -> ukv "action" v; false
+        | Href      v     -> ukv "href"   v; false
+        | Src       v     -> ukv "src"    v; false
+        | Value     v     -> hkv "value"  v; false
+        | Alt       v     -> hkv "alt"    v; false
+        | Name      v     -> kv "name"    v; false
+        | ForInput  v     -> kv "for"     v; false
+        | Id        v     -> kv "id"      v; false
         | Class c ->
           ckv (join c srefTree)
           true
-        | KeyValue (k,v) when nonEmptyStr k ->
+        | Attribute (k,v) when nonEmptyStr k ->
           hkv k v
           false
-        | KeyValue (_, _) ->
+        | Attribute (_, _) ->
           false  // TODO: Raise?
-        | KeyUnencodedValue (k,v) when nonEmptyStr k ->
+        | UnencodedAttribute (k,v) when nonEmptyStr k ->
           kv k v
           false
-        | KeyUnencodedValue (_, _) ->
+        | UnencodedAttribute (_, _) ->
           false  // TODO: Raise?
 
       match tree with
@@ -317,24 +349,41 @@ module Generator =
     let inline renderClosedTag i tag attributes srefTree = renderTag true  i tag attributes srefTree
     let inline renderStartTag  i tag attributes srefTree = renderTag false i tag attributes srefTree
 
-    let ctx = HtmlGeneratorContext.Empty
+    let inline tagAsString t =
+      match t with
+      | Anchor          -> "a"
+      | Break           -> "br"
+      | Form            -> "form"
+      | FieldSet        -> "fieldset"
+      | InputField      -> "input"
+      | Header1         -> "h1"
+      | Header2         -> "h2"
+      | Header3         -> "h3"
+      | Img             -> "img"
+      | Label           -> "label"
+      | Paragraph       -> "p"
+      | CustomTag   v   -> v
 
     let rec renderElements i cls attrs es =
       for e in es do
         match e with
+        | UnencodedText text ->
+          append i text
         | Text text ->
           append i (htmlEncode text)
         | Tag (tag, attributes, ies) ->
+          let ts = tagAsString tag
           let ea = join attributes attrs
           if ies.Length > 0 then
-            renderStartTag i tag ea cls
+            renderStartTag i ts ea cls
             renderElements (i + 2) Empty Empty ies
-            renderEndTag i tag
+            renderEndTag i ts
           else
-            renderClosedTag i tag ea cls
+            renderClosedTag i ts ea cls
         | ClosedTag (tag, attributes) ->
+          let ts = tagAsString tag
           let ea = join attributes attrs
-          renderClosedTag i tag ea cls
+          renderClosedTag i ts ea cls
         | WithClass (newClass, inner) ->
           renderElements i newClass attrs inner
         | WithAttributes (newAttributes, inner) ->

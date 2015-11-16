@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // ----------------------------------------------------------------------------------------------
-module MyService
+module RecognitionSite
 
 module Parsers =
   open MiniJson.DynamicJsonModule
@@ -28,8 +28,7 @@ module Pages =
   let inline input n t p =
     paragraph
       [|
-        text t
-        lineBreak
+        textLabel n t
         textField n ""
         |> withAttributes_  [|attribute "placeholder" p|]
       |]
@@ -63,9 +62,9 @@ module Pages =
               "MOTIVATION"
               "Here are the reasons I think this person is awesome:"
               "Describe why you think the person deserves recognition from his/her peers"
-            submitField "SUBMIT_IT" "Send recognition"
+            submitField "SUBMIT_IT" "Send recognition" |> withClass_ [|styleRef "pure-button-primary"|]
           |]
-          |> withClass_ [|styleRef "pure-form"|]
+          |> withClass_ [|styleRef "pure-form"; styleRef "pure-form-stacked"|]
       |]
 
   let PageRecognitionReceived =
@@ -77,8 +76,12 @@ module Pages =
         text "Thank you for taking time to raise awareness of awesome employees"
       |]
 
-  let HtmlRecognition         = Generator.generateHtml PageRecognition
-  let HtmlRecognitionReceived = Generator.generateHtml PageRecognitionReceived
+  let generate page           = Generator.generateHtml
+                                  Model.HtmlGeneratorContext.empty
+                                  page
+
+  let HtmlRecognition         = generate PageRecognition
+  let HtmlRecognitionReceived = generate PageRecognitionReceived
 
 module WebParts =
   open MiniJson.JsonModule
