@@ -67,6 +67,7 @@ module Model =
   type HtmlTag            =
     | Anchor
     | Break
+    | Div
     | Form
     | FieldSet
     | InputField
@@ -76,6 +77,7 @@ module Model =
     | Img
     | Label
     | Paragraph
+    | Span
     | CustomTag           of string
   type HtmlAttribute      =
     | Alt                 of string
@@ -88,6 +90,7 @@ module Model =
     | Method              of HtmlFormMethod
     | Name                of string
     | Src                 of string
+    | Style               of string
     | Value               of string
     | Attribute           of string*string
     | UnencodedAttribute  of string*string
@@ -112,6 +115,7 @@ module Model =
     | Text            of string
     | Tag             of HtmlTag*HtmlAttributeTree*(HtmlElement [])
     | ClosedTag       of HtmlTag*HtmlAttributeTree
+    | Inlined         of HtmlElement []
     | WithClass       of HtmlStyleRefTree*(HtmlElement [])
     | WithAttributes  of HtmlAttributeTree*(HtmlElement [])
     | MapContext      of (HtmlGeneratorContext -> HtmlGeneratorContext)*(HtmlElement [])
@@ -157,6 +161,9 @@ let inline textHeader2 text                       = header2 (text_ text)
 let inline textHeader3 text                       = header3 (text_ text)
 let inline paragraph elements                     = tag Paragraph empty elements
 let inline anchor href elements                   = tag Anchor (leaf1 (Href href)) elements
+let inline div elements                           = tag Div empty elements
+let inline span elements                          = tag Span empty elements
+let inline inlined elements                       = Inlined (elements)
 let inline textLink href description              = anchor href (text_ description)
 let inline imageLink href src alt                 = anchor href [|image src alt|]
 let inline withClass cls elements                 = WithClass (leafN cls, elements)
@@ -181,6 +188,11 @@ let inline page title links metas context body : HtmlPage =
   }
 
 module Generator =
+  type HtmlTagType =
+    | TagOpen
+    | TagClosed
+    | TagEmpty
+
   let generateHtml (page : HtmlPage) : string =
     let html  = StringBuilder 64
 
@@ -283,8 +295,9 @@ module Generator =
         | Name      v     -> kv "name"    v; false
         | ForInput  v     -> kv "for"     v; false
         | Id        v     -> kv "id"      v; false
-        | Class c ->
-          ckv (join c classOverride)
+        | Style     v     -> kv "style"   v; false
+        | Class v ->
+          ckv (join v classOverride)
           true
         | Attribute (k,v) when nonEmptyStr k ->
           hkv k v
@@ -332,6 +345,7 @@ module Generator =
       match tag with
       | Anchor          -> "a"
       | Break           -> "br"
+      | Div             -> "div"
       | Form            -> "form"
       | FieldSet        -> "fieldset"
       | InputField      -> "input"
@@ -341,27 +355,33 @@ module Generator =
       | Img             -> "img"
       | Label           -> "label"
       | Paragraph       -> "p"
+      | Span            -> "span"
       | CustomTag   v   -> v
 
     let renderTag
-      (closed         : bool                )
+      (tagType        : HtmlTagType         )
       (ctx            : HtmlGeneratorContext)
       (i              : int                 )
       (tag            : HtmlTag             )
       (attributes     : HtmlAttributeTree   )
       (classOverride  : HtmlStyleRefTree    ) =
+      let ts = tagAsString tag
       indent i
       ch '<'
-      str (tagAsString tag)
+      str ts
       let hasClass          = renderAttributes attributes classOverride
       if not hasClass && not (isEmpty classOverride) then
         ckv classOverride
-      if closed then
-        ch '/'
-      ch '>'
+      match tagType with
+      | TagOpen   -> ch '>'
+      | TagClosed -> str "/>"
+      | TagEmpty  ->
+        str "></"
+        str ts
+        ch '>'
       newl ()
 
-    let renderEndTag
+    let renderCloseTag
       (i              : int                 )
       (tag            : HtmlTag             ) =
       indent i
@@ -370,8 +390,9 @@ module Generator =
       ch '>'
       newl ()
 
-    let inline renderClosedTag ctx i tag attributes classOverride = renderTag true  ctx i tag attributes classOverride
-    let inline renderStartTag  ctx i tag attributes classOverride = renderTag false ctx i tag attributes classOverride
+    let inline renderClosedTag  ctx i tag attributes classOverride = renderTag TagClosed ctx i tag attributes classOverride
+    let inline renderOpenTag    ctx i tag attributes classOverride = renderTag TagOpen   ctx i tag attributes classOverride
+    let inline renderEmptyTag   ctx i tag attributes classOverride = renderTag TagEmpty  ctx i tag attributes classOverride
 
     let rec renderElements ctx i cls attrs es =
       for e in es do
@@ -383,18 +404,20 @@ module Generator =
         | Tag (tag, attributes, ies) ->
           let ea = join attributes attrs
           if ies.Length > 0 then
-            renderStartTag ctx i tag ea cls
+            renderOpenTag ctx i tag ea cls
             renderElements ctx (i + 2) empty empty ies
-            renderEndTag i tag
+            renderCloseTag i tag
           else
-            renderClosedTag ctx i tag ea cls
+            renderEmptyTag ctx i tag ea cls
         | ClosedTag (tag, attributes) ->
           let ea = join attributes attrs
           renderClosedTag ctx i tag ea cls
+        | Inlined ies ->
+          renderElements ctx i cls attrs ies
         | WithClass (newClass, ies) ->
-          renderElements ctx i newClass attrs ies
+          renderElements ctx i (join cls newClass) attrs ies
         | WithAttributes (newAttributes, ies) ->
-          renderElements ctx i cls newAttributes ies
+          renderElements ctx i cls (join attrs newAttributes) ies
         | MapContext (m, ies) ->
           let newCtx = m ctx
           renderElements newCtx i cls attrs ies
@@ -409,8 +432,8 @@ module Generator =
       append 4 (sprintf """<meta name="%s" content="%s"/>""" name content)
     append 4 (sprintf "<title>%s</title>" (htmlEncode page.Title))
     append 2 "</head>"
-    append 2 "<body>"
-    renderElements page.Context 2 empty empty page.Body
+    append 2 """<body style="padding: 32px;">"""
+    renderElements page.Context 4 empty empty page.Body
     append 2 "</body>"
     append 0 "</html>"
 

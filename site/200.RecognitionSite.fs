@@ -24,18 +24,34 @@ module Parsers =
 
 module Pages =
   open Html
+  open Html.Common
+  open Html.Model
 
   module Pure =
-    let inline form           e = withClass_ [|styleRef "pure-form"; styleRef "pure-form-stacked"|] e
-    let inline button         e = withClass_ [|styleRef "pure-button"|] e
-    let inline primaryButton  e = withClass_ [|styleRef "pure-button"; styleRef "pure-button-primary"|] e
+    let input         = withClass_ [|styleRef "pure-input-1"|]
+    let form          = withClass_ [|styleRef "pure-form"; styleRef "pure-form-stacked"|]
+    let button        = withClass_ [|styleRef "pure-button"|]
+    let primaryButton = withClass_ [|styleRef "pure-button"; styleRef "pure-button-primary"|]
+
+  module Attribute =
+    let inline placeholder p = withAttributes_  [|attribute "placeholder" p|]
 
   let inline input n t p =
-    paragraph
+    inlined
       [|
         textLabel n t
         textField n ""
-        |> withAttributes_  [|attribute "placeholder" p|]
+        |> Attribute.placeholder p
+        |> Pure.input
+      |]
+
+  let inline textarea n t p =
+    inlined
+      [|
+        textLabel n t
+        tag (CustomTag "textarea") (leaf2 (Name n) (attribute "rows" "5")) [||]
+        |> Attribute.placeholder p
+        |> Pure.input
       |]
 
   let page nm body =
@@ -43,7 +59,7 @@ module Pages =
       nm
       [|stylesheet  "http://yui.yahooapis.com/pure/0.6.0/pure-min.css"|]
       [|viewport    "width=device-width, initial-scale=1"             |]
-      Model.HtmlGeneratorContext.empty
+      HtmlGeneratorContext.empty
       body
 
   let PageRecognition =
@@ -54,7 +70,7 @@ module Pages =
 
         form
           "/PostRecognition"
-          Model.UsePost
+          UsePost
           [|
             input
               "MY_USERID"
@@ -64,7 +80,7 @@ module Pages =
               "AWESOME_USERID"
               "I like to recognize the awesome work done by:"
               "The user name of the person you want grant recognition"
-            input
+            textarea
               "MOTIVATION"
               "Here are the reasons I think this person is awesome:"
               "Describe why you think the person deserves recognition from his/her peers"
@@ -102,13 +118,12 @@ module WebParts =
     RespondWithJson DoIndent json
     |> ToWebPart
 
-  let GetRecognition =
-    RespondWithText "text/html" Pages.HtmlRecognition
+  let HtmlResponse html =
+    RespondWithText "text/html" html
     |> ToWebPart
 
-  let GetRecognitionReceived =
-    RespondWithText "text/html" Pages.HtmlRecognitionReceived
-    |> ToWebPart
+  let GetRecognition          = HtmlResponse Pages.HtmlRecognition
+  let GetRecognitionReceived  = HtmlResponse Pages.HtmlRecognitionReceived
 
   let PostRecognition =
     Request
