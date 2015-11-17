@@ -34,14 +34,39 @@ module Pages =
     let primaryButton = withClass_ [|styleRef "pure-button"; styleRef "pure-button-primary"|]
 
   module Attribute =
-    let inline placeholder p = withAttributes_  [|attribute "placeholder" p|]
+    let inline placeholder p =
+      withAttributes_ [|attribute "placeholder" p|]
 
-  let inline input n t p =
+    let inline userInput id p =
+      withAttributes_
+        [|
+          Id                  id
+          attribute           "placeholder" p
+          unencodedAttribute  "onblur"      (sprintf "onGetUserName('%s')" id)
+        |]
+
+  module Scripts =
+    let Main = """
+    function onGetUserName(inputId) {
+      var query = document.getElementById(inputId).value;
+      if (query.length > 2) {
+        var req = new XMLHttpRequest();
+        req.onreadystatechange = function() {
+          if (req.readyState == 4 && req.status == 200) {
+            document.getElementById(inputId).value = req.responseText;
+          }
+        };
+        req.open("GET", "/GetUserName/" + query, true);
+        req.send();
+      }
+    }
+"""
+  let inline userInput id n t p =
     inlined
       [|
         textLabel n t
         textField n ""
-        |> Attribute.placeholder p
+        |> Attribute.userInput id p
         |> Pure.input
       |]
 
@@ -59,6 +84,7 @@ module Pages =
       nm
       [|stylesheet  "http://yui.yahooapis.com/pure/0.6.0/pure-min.css"|]
       [|viewport    "width=device-width, initial-scale=1"             |]
+      [|script      Scripts.Main                                      |]
       HtmlGeneratorContext.empty
       body
 
@@ -72,11 +98,13 @@ module Pages =
           "/PostRecognition"
           UsePost
           [|
-            input
+            userInput
+              "my_userid"
               "MY_USERID"
               "Hello, my name is:"
               "Your user name"
-            input
+            userInput
+              "awesome_userid"
               "AWESOME_USERID"
               "I like to recognize the awesome work done by:"
               "The user name of the person you want grant recognition"
@@ -122,6 +150,7 @@ module WebParts =
     RespondWithText "text/html" html
     |> ToWebPart
 
+  let GetUserName query       = JsonResponse (JsonObject [|"query", JsonString query; "response", JsonString "emanr"|])
   let GetRecognition          = HtmlResponse Pages.HtmlRecognition
   let GetRecognitionReceived  = HtmlResponse Pages.HtmlRecognitionReceived
 
@@ -142,5 +171,6 @@ let App : WebPart =
       GET >>= path      "/Recognition"              >>= WebParts.GetRecognition
       GET >>= path      "/RecognitionReceived"      >>= WebParts.GetRecognitionReceived
       POST>>= path      "/PostRecognition"          >>= WebParts.PostRecognition
+      GET >>= pathScan  "/GetUserName/%s"               WebParts.GetUserName
       MOVED_PERMANENTLY "/Recognition"
     ]

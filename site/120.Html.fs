@@ -55,6 +55,9 @@ open Common
 module Model =
   type HtmlLink           = HtmlLink      of string*string
   type HtmlMeta           = HtmlMeta      of string*string
+  type HtmlScript         =
+    | HtmlScriptContent of string
+    | HtmlScriptSrc     of string
   type HtmlTextInput      =
     | TextInput
     | RadioInput
@@ -128,6 +131,7 @@ module Model =
       Title           : string
       Links           : HtmlLink []
       Metas           : HtmlMeta []
+      Scripts         : HtmlScript []
       Context         : HtmlGeneratorContext
       Body            : HtmlElement []
     }
@@ -178,11 +182,14 @@ let inline link rel href                          = HtmlLink (rel,href)
 let inline stylesheet href                        = HtmlLink ("stylesheet",href)
 let inline meta name content                      = HtmlMeta (name,content)
 let inline viewport content                       = HtmlMeta ("viewport",content)
-let inline page title links metas context body : HtmlPage =
+let inline script content                         = HtmlScriptContent content
+let inline scriptSrc src                          = HtmlScriptSrc src
+let inline page title links metas scripts context body : HtmlPage =
   {
     Title   = title
     Links   = links
     Metas   = metas
+    Scripts = scripts
     Context = context
     Body    = body
   }
@@ -435,6 +442,14 @@ module Generator =
     append 2 """<body style="padding: 32px;">"""
     renderElements page.Context 4 empty empty page.Body
     append 2 "</body>"
+    for script in page.Scripts do
+      match script with
+      | HtmlScriptContent c ->
+        append 2 "<script>"
+        append 0 c
+        append 2 "</script>"
+      | HtmlScriptSrc src ->
+        append 2 (sprintf """<script src="%s">""" (urlEncode src))
     append 0 "</html>"
 
     let result = html.ToString ()
