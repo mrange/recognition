@@ -60,7 +60,7 @@ module Pages =
             }
           }
         };
-        req.open("GET", "/GetUserName/" + query, true);
+        req.open("GET", "/GetUserName/" + encodeURIComponent(query), true);
         req.send();
       }
     }
@@ -157,19 +157,20 @@ module WebParts =
     RespondWithText "text/html" html
     |> ToWebPart
 
-  let upperCase (s : string) = s.ToLowerInvariant ()
+  let trim (s : string) = s.Trim ()
+  let lowerCase (s : string) = s.ToLowerInvariant ()
 
   let users =
-    let uc = Array.map upperCase
+    let lc = Array.map lowerCase
     [|
-      "marten.range"  , [|"Mårten Rånge" ; "Mårten"; "Rånge"  ; "marten.range"  |] |> uc
-      "stefan.lekebo" , [|"Stefan Lekebo"; "Stefan"; "Lekebo" ; "stefan.lekebo" |] |> uc
-      "rikard.kaer"   , [|"Rikard Käer"  ; "Rikard"; "Käer"   ; "Rikard Käer"   |] |> uc
+      "marten.range"  , [|"Mårten Rånge" ; "Mårten"; "Rånge"  ; "marten.range"  |] |> lc
+      "stefan.lekebo" , [|"Stefan Lekebo"; "Stefan"; "Lekebo" ; "stefan.lekebo" |] |> lc
+      "rikard.kaer"   , [|"Rikard Käer"  ; "Rikard"; "Käer"   ; "rikard.käer"   |] |> lc
     |]
 
   let GetUserName query       =
-    let dq  = query |> urlDecode
-    let udq = dq |> upperCase
+    let dq  = query |> urlDecode |> trim
+    let udq = dq |> lowerCase
 
     let aliasExists (aliases : string []) =
       aliases
