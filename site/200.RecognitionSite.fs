@@ -53,7 +53,11 @@ module Pages =
         var req = new XMLHttpRequest();
         req.onreadystatechange = function() {
           if (req.readyState == 4 && req.status == 200) {
-            document.getElementById(inputId).value = req.responseText;
+            var json      = JSON.parse(req.responseText);
+            var response  = json.response;
+            if (response != undefined) {
+              document.getElementById(inputId).value = response;
+            }
           }
         };
         req.open("GET", "/GetUserName/" + query, true);
@@ -115,6 +119,8 @@ module Pages =
             submitField "SUBMIT_IT" "Send recognition" |> Pure.primaryButton
           |]
           |> Pure.form
+
+        text "Recognition of coworkers will be shared with relevant line managers"
       |]
 
   let PageRecognitionReceived =
@@ -132,6 +138,7 @@ module Pages =
   let HtmlRecognitionReceived = generate PageRecognitionReceived
 
 module WebParts =
+  open Html
   open MiniJson.JsonModule
   open Parsers
   open Suave.Http.RequestErrors
@@ -150,7 +157,34 @@ module WebParts =
     RespondWithText "text/html" html
     |> ToWebPart
 
-  let GetUserName query       = JsonResponse (JsonObject [|"query", JsonString query; "response", JsonString "emanr"|])
+  let upperCase (s : string) = s.ToLowerInvariant ()
+
+  let users =
+    let uc = Array.map upperCase
+    [|
+      "marten.range"  , [|"Mårten Rånge" ; "Mårten"; "Rånge"  ; "marten.range"  |] |> uc
+      "stefan.lekebo" , [|"Stefan Lekebo"; "Stefan"; "Lekebo" ; "stefan.lekebo" |] |> uc
+      "rikard.kaer"   , [|"Rikard Käer"  ; "Rikard"; "Käer"   ; "Rikard Käer"   |] |> uc
+    |]
+
+  let GetUserName query       =
+    let dq  = query |> urlDecode
+    let udq = dq |> upperCase
+
+    let aliasExists (aliases : string []) =
+      aliases
+      |> Array.exists (fun alias -> alias.StartsWith udq)
+
+    let user =
+      users
+      |> Array.tryPick (fun (user, aliases) -> if aliasExists aliases then Some user else None)
+
+    let json =
+      match user with
+      | Some u  -> JsonObject [|"query", JsonString dq; "response", JsonString u|]
+      | None    -> JsonObject [|"query", JsonString dq|]
+
+    JsonResponse json
   let GetRecognition          = HtmlResponse Pages.HtmlRecognition
   let GetRecognitionReceived  = HtmlResponse Pages.HtmlRecognitionReceived
 

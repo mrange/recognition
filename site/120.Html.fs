@@ -138,6 +138,11 @@ module Model =
 
 open Model
 
+let inline htmlEncode (s : string) : string       = WebUtility.HtmlEncode s
+let inline htmlDecode (s : string) : string       = WebUtility.HtmlDecode s
+let inline urlEncode  (s : string) : string       = WebUtility.UrlEncode s
+let inline urlDecode  (s : string) : string       = WebUtility.UrlDecode s
+
 let inline styleRef s                             = HtmlStyleRef s
 let inline attribute k v                          = Attribute (k,v)
 let inline unencodedAttribute k v                 = UnencodedAttribute (k,v)
@@ -203,9 +208,6 @@ module Generator =
   let generateHtml (page : HtmlPage) : string =
     let html  = StringBuilder 64
 
-    let inline htmlEncode (s : string) : string = WebUtility.HtmlEncode s
-    let inline urlEncode  (s : string) : string = s
-
     let inline emptyStr s         = String.IsNullOrEmpty s
     let inline nonEmptyStr s      = not (emptyStr s)
     let inline ch   (c : char)    = ignore <| html.Append c
@@ -226,8 +228,6 @@ module Generator =
         postkv ()
     let inline hkv k v            =
       kv k (htmlEncode v)
-    let inline ukv k v            =
-      kv k (urlEncode v)
 
     let inline append (i : int) (l : string) : unit =
       indent i
@@ -294,9 +294,9 @@ module Generator =
             | UsePost     -> "POST"
           kv "method" i
           false
-        | Action    v     -> ukv "action" v; false
-        | Href      v     -> ukv "href"   v; false
-        | Src       v     -> ukv "src"    v; false
+        | Action    v     -> kv "action"  v; false
+        | Href      v     -> kv "href"    v; false
+        | Src       v     -> kv "src"     v; false
         | Value     v     -> hkv "value"  v; false
         | Alt       v     -> hkv "alt"    v; false
         | Name      v     -> kv "name"    v; false
@@ -434,7 +434,7 @@ module Generator =
     append 0 "<html>"
     append 2 "<head>"
     for (HtmlLink (rel, href)) in page.Links do
-      append 4 (sprintf """<link rel="%s" href="%s"/>""" rel (urlEncode href))
+      append 4 (sprintf """<link rel="%s" href="%s"/>""" rel href)
     for (HtmlMeta (name, content)) in page.Metas do
       append 4 (sprintf """<meta name="%s" content="%s"/>""" name content)
     append 4 (sprintf "<title>%s</title>" (htmlEncode page.Title))
@@ -449,7 +449,7 @@ module Generator =
         append 0 c
         append 2 "</script>"
       | HtmlScriptSrc src ->
-        append 2 (sprintf """<script src="%s">""" (urlEncode src))
+        append 2 (sprintf """<script src="%s">""" src)
     append 0 "</html>"
 
     let result = html.ToString ()
