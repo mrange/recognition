@@ -138,10 +138,10 @@ module Model =
 
 open Model
 
-let inline htmlEncode (s : string) : string       = WebUtility.HtmlEncode s
-let inline htmlDecode (s : string) : string       = WebUtility.HtmlDecode s
-let inline urlEncode  (s : string) : string       = WebUtility.UrlEncode s
-let inline urlDecode  (s : string) : string       = WebUtility.UrlDecode s
+let inline urlEncode  (s : string) : string       = System.Web.HttpUtility.UrlEncode s
+let inline urlDecode  (s : string) : string       = System.Web.HttpUtility.UrlDecode s
+let inline htmlEncode (s : string) : string       = System.Web.HttpUtility.HtmlEncode s
+let inline htmlDecode (s : string) : string       = System.Web.HttpUtility.HtmlDecode s
 
 let inline styleRef s                             = HtmlStyleRef s
 let inline attribute k v                          = Attribute (k,v)
@@ -367,7 +367,6 @@ module Generator =
 
     let renderTag
       (tagType        : HtmlTagType         )
-      (ctx            : HtmlGeneratorContext)
       (i              : int                 )
       (tag            : HtmlTag             )
       (attributes     : HtmlAttributeTree   )
@@ -397,9 +396,9 @@ module Generator =
       ch '>'
       newl ()
 
-    let inline renderClosedTag  ctx i tag attributes classOverride = renderTag TagClosed ctx i tag attributes classOverride
-    let inline renderOpenTag    ctx i tag attributes classOverride = renderTag TagOpen   ctx i tag attributes classOverride
-    let inline renderEmptyTag   ctx i tag attributes classOverride = renderTag TagEmpty  ctx i tag attributes classOverride
+    let inline renderClosedTag  i tag attributes classOverride = renderTag TagClosed i tag attributes classOverride
+    let inline renderOpenTag    i tag attributes classOverride = renderTag TagOpen   i tag attributes classOverride
+    let inline renderEmptyTag   i tag attributes classOverride = renderTag TagEmpty  i tag attributes classOverride
 
     let rec renderElements ctx i cls attrs es =
       for e in es do
@@ -411,14 +410,14 @@ module Generator =
         | Tag (tag, attributes, ies) ->
           let ea = join attributes attrs
           if ies.Length > 0 then
-            renderOpenTag ctx i tag ea cls
+            renderOpenTag i tag ea cls
             renderElements ctx (i + 2) empty empty ies
             renderCloseTag i tag
           else
-            renderEmptyTag ctx i tag ea cls
+            renderEmptyTag i tag ea cls
         | ClosedTag (tag, attributes) ->
           let ea = join attributes attrs
-          renderClosedTag ctx i tag ea cls
+          renderClosedTag i tag ea cls
         | Inlined ies ->
           renderElements ctx i cls attrs ies
         | WithClass (newClass, ies) ->

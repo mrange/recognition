@@ -18,6 +18,9 @@
 // Start up Suave.io
 // --------------------------------------------------------------------------------------
 
+#r "System"
+#r "System.Web"
+
 // In order to suppress Fsc warnings
 #r "System.ServiceModel.Internals"
 #r "SMDiagnostics"
